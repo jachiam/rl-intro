@@ -1,0 +1,33 @@
+\frametitle{Example Implementation (Continued)}
+
+\lstset{style=mystyle}
+One iteration of training:
+\begin{lstlisting}[language=python]
+# train model for one iteration
+batch_obs, batch_acts, batch_rtgs, batch_rets, batch_lens = [], [], [], [], []
+obs, rew, done, ep_rews = env.reset(), 0, False, []
+while True:
+    batch_obs.append(obs.copy())
+    act = sess.run(actions, {obs_ph: obs.reshape(1,-1)})[0]
+    obs, rew, done, _ = env.step(act)
+    batch_acts.append(act)
+    ep_rews.append(rew)
+    if done:
+        batch_rets.append(sum(ep_rews))
+        batch_lens.append(len(ep_rews))
+        batch_rtgs += list(discount_cumsum(ep_rews, gamma))
+        obs, rew, done, ep_rews = env.reset(), 0, False, []
+        if len(batch_obs) > batch_size:
+            break
+
+# normalize advs trick:
+batch_advs = np.array(batch_rtgs)
+batch_advs = (batch_advs - np.mean(batch_advs))/(np.std(batch_advs) + 1e-8)
+batch_loss, _ = sess.run([loss,train_op], feed_dict={obs_ph: np.array(batch_obs),
+                                                     act_ph: np.array(batch_acts),
+                                                     adv_ph: batch_advs})
+\end{lstlisting}
+
+
+\lstset{style=mystyle3}
+
