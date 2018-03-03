@@ -41,7 +41,7 @@ def mlp(x, hidden_sizes=(32,32), activation=tf.tanh):
 def train(env_name='CartPole-v0', hidden_dim=32, n_layers=1,
           lr=1e-3, gamma=0.99, n_epochs=50, steps_per_epoch=5000, 
           batch_size=32, target_update_freq=2500, final_epsilon=0.05,
-          finish_decay=50000, replay_size=5000, steps_before_training=1500
+          finish_decay=50000, replay_size=25000, steps_before_training=5000
           ):
 
     env = gym.make(env_name)
@@ -84,8 +84,9 @@ def train(env_name='CartPole-v0', hidden_dim=32, n_layers=1,
     obs, rew, done = env.reset(), 0, False
     epsilon = 1
     ep_ret, ep_len = 0, 0
-    epoch_losses, epoch_rets, epoch_lens = [], [], []
-    for t in range(n_epochs * steps_per_epoch):
+    epoch_losses, epoch_rets, epoch_lens, epoch_qs = [], [], [], []
+    total_steps = n_epochs * steps_per_epoch + steps_before_training
+    for t in range(total_steps):
         if np.random.rand() < epsilon:
             act = np.random.randint(n_acts)
         else:
@@ -93,6 +94,7 @@ def train(env_name='CartPole-v0', hidden_dim=32, n_layers=1,
             act = np.argmax(cur_q)
         next_obs, rew, done, _ = env.step(act)
         replay_buffer.store(obs, act, rew, next_obs, done)
+        obs = next_obs
 
         ep_ret += rew
         ep_len += 1
@@ -106,26 +108,26 @@ def train(env_name='CartPole-v0', hidden_dim=32, n_layers=1,
 
         if t > steps_before_training:
             batch = replay_buffer.sample_batch(batch_size)
-            step_loss, _ = sess.run([loss, train_op], feed_dict={obs_ph: batch['obs1'],
-                                                                 obs_targ_ph: batch['obs2'],
-                                                                 act_ph: batch['acts'],
-                                                                 rew_ph: batch['rews'],
-                                                                 done_ph: batch['done']
-                                                                 })
+            feed_dict = {obs_ph: batch['obs1'],
+                         obs_targ_ph: batch['obs2'],
+                         act_ph: batch['acts'],
+                         rew_ph: batch['rews'],
+                         done_ph: batch['done']
+                         }
+            step_loss, cur_q, _ = sess.run([loss, q_vals, train_op], feed_dict=feed_dict)
             epoch_losses.append(step_loss)
+            epoch_qs.append(cur_q)
 
         if t % target_update_freq == 0:
             sess.run(target_update_op)
 
         epsilon = 1 + (final_epsilon - 1)*min(1, t/finish_decay)
 
-        if t % steps_per_epoch == 0 and t>0:
-            epoch = t // steps_per_epoch
-            print('epoch: %d \t loss: %.3f \t ret: %.3f \t len: %.3f \t epsilon: %.3f'%
-                    (epoch, np.mean(epoch_losses), np.mean(epoch_rets), np.mean(epoch_lens), epsilon))
-            epoch_losses = []
-            epoch_rets = []
-            epoch_losses = []
+        if (t - steps_before_training) % steps_per_epoch == 0 and (t - steps_before_training)>0:
+            epoch = (t - steps_before_training) // steps_per_epoch
+            print('epoch: %d \t loss: %.3f \t ret: %.3f \t len: %.3f \t mean q: %.3f \t epsilon: %.3f'%
+                    (epoch, np.mean(epoch_losses), np.mean(epoch_rets), np.mean(epoch_lens), np.mean(epoch_qs), epsilon))
+            epoch_losses, epoch_rets, epoch_lens, epoch_qs = [], [], [], []
 
 if __name__ == '__main__':
     train()
