@@ -40,7 +40,7 @@ def mlp(x, hidden_sizes=(32,32), activation=tf.tanh):
 
 def train(env_name='CartPole-v0', hidden_dim=32, n_layers=1,
           lr=1e-3, gamma=0.99, n_epochs=50, steps_per_epoch=5000, 
-          batch_size=32, target_update_freq=1000, final_epsilon=0.05,
+          batch_size=32, target_update_freq=2500, final_epsilon=0.05,
           finish_decay=50000, replay_size=5000, steps_before_training=1500
           ):
 
@@ -58,7 +58,7 @@ def train(env_name='CartPole-v0', hidden_dim=32, n_layers=1,
 
     with tf.variable_scope('target'):
         obs_targ_ph = tf.placeholder(shape=(None, obs_dim), dtype=tf.float32)
-        net = mlp(obs_ph, hidden_sizes=[hidden_dim]*n_layers)
+        net = mlp(obs_targ_ph, hidden_sizes=[hidden_dim]*n_layers)
         q_targ = tf.layers.dense(net, units=n_acts, activation=None)
 
     # make loss
