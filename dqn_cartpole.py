@@ -44,7 +44,7 @@ def train(env_name='CartPole-v0', hidden_dim=32, n_layers=1,
           finish_decay=50000, replay_size=25000, steps_before_training=5000
           ):
 
-    env = gym.make(env_name)
+    env, test_env = gym.make(env_name), gym.make(env_name)
     obs_dim = env.observation_space.shape[0]
     n_acts = env.action_space.n
 
@@ -80,6 +80,27 @@ def train(env_name='CartPole-v0', hidden_dim=32, n_layers=1,
 
     sess = tf.InteractiveSession()
     sess.run(tf.global_variables_initializer())
+
+    def test_q(n_test_eps=10):
+        ep_rets, ep_lens = [], []
+        for _ in range(n_test_eps):
+            obs, rew, done = test_env.reset(), 0, False
+            ep_ret, ep_len = 0, 0
+            while not(done):
+                if np.random.rand() < final_epsilon:
+                    act = np.random.randint(n_acts)
+                else:
+                    cur_q = sess.run(q_vals, feed_dict={obs_ph: obs.reshape(1,-1)})
+                    act = np.argmax(cur_q)
+                env.render()
+                obs, rew, done, _ = test_env.step(act)
+                ep_ret += rew
+                ep_len += 1
+            ep_rets.append(ep_ret)
+            ep_lens.append(ep_len)
+        return np.mean(ep_rets), np.mean(ep_lens)
+
+
 
     obs, rew, done = env.reset(), 0, False
     epsilon = 1
@@ -125,8 +146,13 @@ def train(env_name='CartPole-v0', hidden_dim=32, n_layers=1,
 
         if (t - steps_before_training) % steps_per_epoch == 0 and (t - steps_before_training)>0:
             epoch = (t - steps_before_training) // steps_per_epoch
-            print('epoch: %d \t loss: %.3f \t ret: %.3f \t len: %.3f \t mean q: %.3f \t epsilon: %.3f'%
-                    (epoch, np.mean(epoch_losses), np.mean(epoch_rets), np.mean(epoch_lens), np.mean(epoch_qs), epsilon))
+            test_ep_ret, test_ep_len = test_q()
+            print(('epoch: %d \t loss: %.3f \t train_ret: %.3f' \
+                   + '\t train_len: %.3f \t test_ret: %.3f \t test_len: %.3f ' \
+                   + 'mean q: %.3f \t epsilon: %.3f')%
+                    (epoch, np.mean(epoch_losses), np.mean(epoch_rets), 
+                     np.mean(epoch_lens), test_ep_ret, test_ep_len, 
+                     np.mean(epoch_qs), epsilon))
             epoch_losses, epoch_rets, epoch_lens, epoch_qs = [], [], [], []
 
 if __name__ == '__main__':
