@@ -31,12 +31,10 @@ class ReplayBuffer:
                     rews=self.rews_buf[idxs],
                     done=self.done_buf[idxs])
 
-
 def mlp(x, hidden_sizes=(32,32), activation=tf.tanh):
     for size in hidden_sizes:
         x = tf.layers.dense(x, units=size, activation=activation)
     return x
-
 
 def train(env_name='CartPole-v0', hidden_dim=32, n_layers=1,
           lr=1e-3, gamma=0.99, n_epochs=50, steps_per_epoch=5000, 
@@ -70,6 +68,7 @@ def train(env_name='CartPole-v0', hidden_dim=32, n_layers=1,
     target = rew_ph + gamma * (1 - done_ph) * tf.stop_gradient(tf.reduce_max(q_targ, axis=1))
     loss = tf.reduce_mean((q_a - target)**2)
 
+    # update op for target network
     main_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='main')
     target_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='target')
     assign_ops = [tf.assign(target_var, main_var) for target_var, main_var in zip(target_vars, main_vars)]
@@ -81,51 +80,41 @@ def train(env_name='CartPole-v0', hidden_dim=32, n_layers=1,
     sess = tf.InteractiveSession()
     sess.run(tf.global_variables_initializer())
 
+    def get_action(obs):
+        if np.random.rand() < final_epsilon:
+            return np.random.randint(n_acts)
+        else:
+            cur_q = sess.run(q_vals, feed_dict={obs_ph: obs.reshape(1,-1)})
+            return np.argmax(cur_q)
+
     def test_q(n_test_eps=10):
         ep_rets, ep_lens = [], []
         for _ in range(n_test_eps):
-            obs, rew, done = test_env.reset(), 0, False
-            ep_ret, ep_len = 0, 0
+            obs, rew, done, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
             while not(done):
-                if np.random.rand() < final_epsilon:
-                    act = np.random.randint(n_acts)
-                else:
-                    cur_q = sess.run(q_vals, feed_dict={obs_ph: obs.reshape(1,-1)})
-                    act = np.argmax(cur_q)
                 env.render()
-                obs, rew, done, _ = test_env.step(act)
+                obs, rew, done, _ = test_env.step(get_action(obs))
                 ep_ret += rew
                 ep_len += 1
             ep_rets.append(ep_ret)
             ep_lens.append(ep_len)
         return np.mean(ep_rets), np.mean(ep_lens)
 
-
-
-    obs, rew, done = env.reset(), 0, False
-    epsilon = 1
-    ep_ret, ep_len = 0, 0
+    obs, rew, done, epsilon, ep_ret, ep_len = env.reset(), 0, False, 1, 0, 0
     epoch_losses, epoch_rets, epoch_lens, epoch_qs = [], [], [], []
     total_steps = n_epochs * steps_per_epoch + steps_before_training
     for t in range(total_steps):
-        if np.random.rand() < epsilon:
-            act = np.random.randint(n_acts)
-        else:
-            cur_q = sess.run(q_vals, feed_dict={obs_ph: obs.reshape(1,-1)})
-            act = np.argmax(cur_q)
+        act = get_action(obs)
         next_obs, rew, done, _ = env.step(act)
         replay_buffer.store(obs, act, rew, next_obs, done)
         obs = next_obs
-
         ep_ret += rew
         ep_len += 1
 
         if done:
-            obs, rew, done = env.reset(), 0, False
             epoch_rets.append(ep_ret)
             epoch_lens.append(ep_len)
-            ep_ret = 0
-            ep_len = 0
+            obs, rew, done, ep_ret, ep_len = env.reset(), 0, False, 0, 0
 
         if t > steps_before_training:
             batch = replay_buffer.sample_batch(batch_size)
@@ -144,12 +133,13 @@ def train(env_name='CartPole-v0', hidden_dim=32, n_layers=1,
 
         epsilon = 1 + (final_epsilon - 1)*min(1, t/finish_decay)
 
+        # at the end of each epoch, evaluate the agent
         if (t - steps_before_training) % steps_per_epoch == 0 and (t - steps_before_training)>0:
             epoch = (t - steps_before_training) // steps_per_epoch
             test_ep_ret, test_ep_len = test_q()
             print(('epoch: %d \t loss: %.3f \t train_ret: %.3f' \
                    + '\t train_len: %.3f \t test_ret: %.3f \t test_len: %.3f ' \
-                   + 'mean q: %.3f \t epsilon: %.3f')%
+                   + '\t mean q: %.3f \t epsilon: %.3f')%
                     (epoch, np.mean(epoch_losses), np.mean(epoch_rets), 
                      np.mean(epoch_lens), test_ep_ret, test_ep_len, 
                      np.mean(epoch_qs), epsilon))
