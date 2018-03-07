@@ -80,8 +80,8 @@ def train(env_name='CartPole-v0', hidden_dim=32, n_layers=1,
     sess = tf.InteractiveSession()
     sess.run(tf.global_variables_initializer())
 
-    def get_action(obs):
-        if np.random.rand() < final_epsilon:
+    def get_action(obs, eps):
+        if np.random.rand() < eps:
             return np.random.randint(n_acts)
         else:
             cur_q = sess.run(q_vals, feed_dict={obs_ph: obs.reshape(1,-1)})
@@ -93,7 +93,7 @@ def train(env_name='CartPole-v0', hidden_dim=32, n_layers=1,
             obs, rew, done, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
             while not(done):
                 env.render()
-                obs, rew, done, _ = test_env.step(get_action(obs))
+                obs, rew, done, _ = test_env.step(get_action(obs, final_epsilon))
                 ep_ret += rew
                 ep_len += 1
             ep_rets.append(ep_ret)
@@ -104,7 +104,7 @@ def train(env_name='CartPole-v0', hidden_dim=32, n_layers=1,
     epoch_losses, epoch_rets, epoch_lens, epoch_qs = [], [], [], []
     total_steps = n_epochs * steps_per_epoch + steps_before_training
     for t in range(total_steps):
-        act = get_action(obs)
+        act = get_action(obs, epsilon)
         next_obs, rew, done, _ = env.step(act)
         replay_buffer.store(obs, act, rew, next_obs, done)
         obs = next_obs
